@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Smart Crop Disease Detection and Advisory demo stack (EC2, S3, DynamoDB, IAM, CloudWatch).
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues: [t3.small, t3.medium]
+    Description: Select a small CPU instance for inference. Model training happens locally.
+  PublicAccessCidr:
+    Type: String
+    Description: Required IPv4 CIDR allowlist for the HTTP demo (for example, a reviewer or office IP range). Do not use 0.0.0.0/0.
+  ReleaseKey:
+    Type: String
+    Default: release/app-release.zip
+    Description: S3 object key for the application bundle uploaded by deploy.ps1.
+  ImageId:
+    Type: AWS::EC2::Image::Id
+    Description: Amazon Linux 2023 x86_64 AMI ID for the selected AWS region.
+
+Resources:
+  AppVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: smart-crop-disease-vpc
+  AppSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: smart-crop-disease-public
+  AppInternetGateway:
+    Type: AWS::EC2::InternetGateway
+  AppInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref AppVpc
+      InternetGatewayId: !Ref AppInternetGateway
+  AppRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVpc
+  AppDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AppInternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref AppRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref AppInternetGateway
+  AppSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnet
+      RouteTableId: !Ref AppRouteTable
+
+  ImageBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: smart-crop-disease
+  PredictionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: prediction_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+        - AttributeName: prediction_key
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: smart-crop-disease
+  AppLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/ec2/smart-crop-disease
+      RetentionInDays: 14
+  AppInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CropAppDataAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:DeleteObject]
+                Resource: !Sub "${ImageBucket.Arn}/*"
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt ImageBucket.Arn
+              - Effect: Allow
+                Action: [dynamodb:PutItem, dynamodb:Query]
+                Resource: !GetAtt PredictionTable.Arn
+              - Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${AppLogGroup.Arn}:*"
+      Tags:
+        - Key: Project
+          Value: smart-crop-disease
+  AppInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [!Ref AppInstanceRole]
+  AppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP demo access and outbound package downloads.
+      VpcId: !Ref AppVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref PublicAccessCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: smart-crop-disease-http
+  AppInstance:
+    Type: AWS::EC2::Instance
+    DependsOn: [AppDefaultRoute, PredictionTable, AppLogGroup]
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref AppInstanceProfile
+      SubnetId: !Ref AppSubnet
+      SecurityGroupIds: [!Ref AppSecurityGroup]
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 20
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euo pipefail
+              dnf install -y docker unzip awscli-2
+              systemctl enable --now docker
+              mkdir -p /opt/crop-app
+              cat > /usr/local/bin/deploy-crop-app <<'DEPLOY_SCRIPT'
+              #!/bin/bash
+              set -euo pipefail
+              while true; do
+                if aws s3api head-object --bucket '${BucketName}' --key '${BundleKey}' --region '${Region}' >/dev/null 2>&1; then
+                  aws s3 cp 's3://${BucketName}/${BundleKey}' /opt/crop-app/release.zip --region '${Region}'
+                  rm -rf /opt/crop-app/current
+                  mkdir -p /opt/crop-app/current
+                  unzip -oq /opt/crop-app/release.zip -d /opt/crop-app/current
+                  cd /opt/crop-app/current
+                  docker build --pull -t smart-crop-disease:latest .
+                  docker rm -f smart-crop-disease >/dev/null 2>&1 || true
+                  docker run -d --name smart-crop-disease --restart unless-stopped \
+                    --log-driver awslogs \
+                    --log-opt awslogs-region='${Region}' \
+                    --log-opt awslogs-group='${LogGroup}' \
+                    --log-opt awslogs-stream=app \
+                    -p 80:8000 \
+                    -e AWS_REGION='${Region}' \
+                    -e S3_BUCKET='${BucketName}' \
+                    -e DYNAMODB_TABLE='${TableName}' \
+                    -e FLASK_SECRET_KEY="$(openssl rand -hex 32)" \
+                    smart-crop-disease:latest
+                  exit 0
+                fi
+                sleep 15
+              done
+              DEPLOY_SCRIPT
+              chmod 750 /usr/local/bin/deploy-crop-app
+              cat > /etc/systemd/system/crop-app-deploy.service <<'SERVICE'
+              [Unit]
+              Description=Build and launch the Smart Crop Disease application
+              After=docker.service network-online.target
+              Wants=network-online.target
+              [Service]
+              Type=oneshot
+              ExecStart=/usr/local/bin/deploy-crop-app
+              RemainAfterExit=yes
+              [Install]
+              WantedBy=multi-user.target
+              SERVICE
+              systemctl daemon-reload
+              systemctl enable --now crop-app-deploy.service
+            - BucketName: !Ref ImageBucket
+              BundleKey: !Ref ReleaseKey
+              Region: !Ref AWS::Region
+              TableName: !Ref PredictionTable
+              LogGroup: !Ref AppLogGroup
+      Tags:
+        - Key: Name
+          Value: smart-crop-disease-app
+
+Outputs:
+  AppUrl:
+    Description: Public HTTP demo URL. Restrict access or add HTTPS before production use.
+    Value: !Sub "http://${AppInstance.PublicDnsName}"
+  AppPublicIp:
+    Description: Public IPv4 address of the EC2 demo instance.
+    Value: !GetAtt AppInstance.PublicIp
+  ImageBucketName:
+    Description: Private S3 bucket for model release and uploaded crop images.
+    Value: !Ref ImageBucket
+  PredictionTableName:
+    Description: DynamoDB prediction history table.
+    Value: !Ref PredictionTable

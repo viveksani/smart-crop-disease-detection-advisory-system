@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f7f3">
+    <meta name="description" content="An AI-assisted crop leaf screening tool with practical next steps.">
+    <title>LeafCheck | Crop health screening</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="LeafCheck home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" fill="none"><path d="M25.7 5.6C16 5.7 8.2 7.8 7 15.4c-.8 5.2 3 9.6 7.6 9.2 7.6-.8 10.8-9.1 11.1-19Z" fill="currentColor"/><path d="M8.1 25.6c3.4-5.7 7.9-9.8 13.6-13" stroke="#eaf5da" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </span>
+        <span class="brand-name">LeafCheck<span class="brand-period">.</span></span>
+      </a>
+      <div class="topbar-actions">
+        <a class="top-link" href="#how-it-works">How it works</a>
+        <span class="status-pill"><span class="status-dot {{ 'ready' if model_ready else '' }}"></span>{{ 'Screening ready' if model_ready else 'Setup in progress' }}</span>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-line"></span>SMART CROP HEALTH</p>
+          <h1>See the signs.<br><span>Choose the next step.</span></h1>
+          <p class="hero-description">A simple, image-based first look at crop leaf health. Upload a clear photo to see a possible condition and practical guidance.</p>
+          <a class="hero-cta" href="#image-check">Start an image check <span aria-hidden="true">↘</span></a>
+          <div class="hero-meta"><span class="meta-icon" aria-hidden="true">✳</span><span>Made for a careful first look, not a final diagnosis.</span></div>
+        </div>
+
+        <div class="hero-card" aria-label="Crop health screening information">
+          <div class="hero-card-top"><span class="hero-card-kicker">A BETTER FIRST LOOK</span><span class="hero-card-index">01 — 03</span></div>
+          <div class="botanical-art" aria-hidden="true">
+            <svg viewBox="0 0 460 300" role="presentation">
+              <path class="stem" d="M224 302c3-74 12-119 52-189"/>
+              <path class="stem thin" d="M245 253c-39-35-72-55-117-66M255 218c45-16 77-37 112-72M267 184c-22-40-30-77-25-124M282 151c34-16 64-20 99-16"/>
+              <path class="leaf leaf-one" d="M128 181c26-46 68-48 103-1-40 30-74 31-103 1Z"/>
+              <path class="leaf leaf-two" d="M331 136c20-48 66-54 103-17-30 39-62 49-103 17Z"/>
+              <path class="leaf leaf-three" d="M238 66c-31-42-16-80 31-95 24 40 18 71-31 95Z" transform="translate(0 50)"/>
+              <path class="leaf leaf-four" d="M261 213c26-43 66-46 97-4-35 29-67 32-97 4Z"/>
+              <path class="vein" d="M134 181c34-4 62-5 94-1M337 136c31-10 58-15 91-17M245 105c12-25 20-47 27-72M269 213c29-3 54-3 85-2"/>
+              <circle class="art-orb" cx="365" cy="52" r="6"/><circle class="art-orb small" cx="112" cy="88" r="4"/>
+            </svg>
+          </div>
+          <div class="hero-card-bottom">
+            <div><span class="hero-card-label">THE FLOW</span><strong>Photo <i>→</i> Insight <i>→</i> Action</strong></div>
+            <span class="flow-badge" aria-hidden="true">38<br><small>CLASSES</small></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace" id="image-check" aria-label="Leaf image screening">
+        <div class="upload-panel">
+          <div class="panel-heading">
+            <div class="step-icon" aria-hidden="true">01</div>
+            <div><p class="eyebrow">IMAGE CHECK</p><h2>Start with one leaf</h2></div>
+          </div>
+
+          {% if error %}<div class="notice error" role="alert">{{ error }}</div>{% endif %}
+          {% if not model_ready %}
+          <div class="notice setup" role="status">
+            <strong>The screening model is being set up</strong>
+            <span>{{ model_message }}</span>
+          </div>
+          {% endif %}
+
+          <form action="{{ url_for('predict') }}" method="post" enctype="multipart/form-data" id="upload-form">
+            <label class="dropzone" id="dropzone" for="leaf-image" tabindex="0" aria-describedby="file-help selection-status">
+              <input id="leaf-image" name="leaf_image" type="file" accept="image/jpeg,image/png,image/webp" {% if not model_ready %}disabled{% endif %} required>
+              <span class="upload-symbol" aria-hidden="true">
+                <svg viewBox="0 0 32 32" fill="none"><path d="M16 21V7m0 0L10.5 12.5M16 7l5.5 5.5M6 20v4.5A2.5 2.5 0 0 0 8.5 27h15a2.5 2.5 0 0 0 2.5-2.5V20" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </span>
+              <span class="drop-title" id="file-title">Drop a leaf photo here</span>
+              <span class="drop-subtitle">or <span class="browse-link">browse files</span></span>
+              <span class="drop-help" id="file-help">JPG, PNG or WebP <span>·</span> up to 10 MB</span>
+            </label>
+            <p class="selection-status" id="selection-status" aria-live="polite"></p>
+            <div class="preview-wrap" id="preview-wrap" hidden>
+              <img id="preview" class="preview" alt="Selected leaf photo preview">
+              <div class="preview-details"><span class="preview-name" id="preview-name"></span><button class="remove-image" id="remove-image" type="button">Remove</button></div>
+            </div>
+            <button class="submit-button" id="submit-button" type="submit" {% if not model_ready %}disabled{% endif %}>
+              <span id="submit-label">Analyze leaf</span><span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+          </form>
+          <p class="privacy-note"><span aria-hidden="true">◇</span> Photos may be stored with prediction history for this project demo. Avoid sensitive images.</p>
+        </div>
+
+        <aside class="result-panel{% if result %} has-diagnosis{% endif %}" aria-live="polite" aria-atomic="true">
+          {% if result %}
+          <div class="result-topline"><span class="result-chip"><span class="result-chip-dot"></span>SCREENING RESULT</span><span class="result-time">JUST NOW</span></div>
+          <p class="result-crop">{{ result.crop }}</p>
+          <h2 class="result-name">{{ result.disease }}</h2>
+          <div class="confidence-card">
+            <div class="score-ring" style="--target-score-angle: {{ (result.confidence * 360)|round|int }}deg" aria-hidden="true"><span>{{ "%.0f"|format(result.confidence * 100) }}<small>%</small></span></div>
+            <div class="confidence-copy"><span>MODEL CONFIDENCE</span><strong>{{ "%.1f"|format(result.confidence * 100) }}%</strong><p>A score from the image model, not a certainty level.</p></div>
+          </div>
+          {% if not result.certain %}<p class="uncertain"><strong>Low confidence</strong> — treat this as uncertain and seek expert confirmation.</p>{% endif %}
+          <div class="advisory-brief">
+            <span class="advisory-icon" aria-hidden="true">✳</span>
+            <div><p class="eyebrow">DISEASE-SPECIFIC FIELD GUIDANCE</p><p class="advisory-summary">{{ result.advisory.summary }}</p></div>
+          </div>
+          <a class="report-jump" href="#analysis-report">Read the full care plan <span aria-hidden="true">↓</span></a>
+          {% if result.save_warning %}<p class="notice error">{{ result.save_warning }}</p>{% endif %}
+          <p class="disclaimer">Screening estimate only. Confirm the crop problem locally before treatment.</p>
+          {% else %}
+          <div class="empty-result">
+            <div class="empty-illustration" aria-hidden="true">
+              <svg viewBox="0 0 180 150" fill="none"><path d="M89 132c0-42 6-67 29-100M91 113c-17-16-35-25-59-29M101 91c23-10 37-22 53-41" stroke="#7d9c81" stroke-width="3" stroke-linecap="round"/><path d="M31 81c15-26 38-29 61-3-22 18-42 19-61 3ZM122 33c12-27 37-30 59-10-17 22-35 28-59 10ZM89 65c-19-22-12-44 14-55 15 22 12 40-14 55Z" fill="#cfe1bc"/><path d="M37 81c20-3 37-4 53-3M127 34c16-6 30-9 49-10M93 59c6-14 9-26 12-41" stroke="#789879" stroke-width="1.5" stroke-linecap="round"/><circle cx="25" cy="35" r="4" fill="#d6bb80"/><circle cx="147" cy="119" r="5" fill="#d6bb80"/><circle cx="61" cy="22" r="2.5" fill="#8eaf8f"/></svg>
+              <span class="scan-line"></span>
+            </div>
+            <span class="result-chip"><span class="result-chip-dot muted-dot"></span>YOUR RESULT</span>
+            <h2>Clarity starts with a closer look.</h2>
+            <p>Upload a clear photo of one leaf. Review typical signs, immediate steps, treatment options and prevention guidance for the possible condition.</p>
+            <div class="result-hint"><span class="hint-number">02</span><span>Review the screening estimate<br>and guidance</span></div>
+          </div>
+          {% endif %}
+        </aside>
+      </section>
+
+      {% if result %}
+      <section class="analysis-report" id="analysis-report" aria-labelledby="analysis-title">
+        <header class="analysis-header">
+          <div><p class="eyebrow">LEAFCHECK FIELD NOTE</p><h2 id="analysis-title">Assessment &amp; action plan</h2><p>Use the signs below to compare with the plant. This model classifies the whole photo; it does not identify the exact lesion or confirm a diagnosis.</p></div>
+          <span class="priority-tag{% if result.advisory.priority.startswith('Urgent') or result.advisory.priority.startswith('Prompt') %} priority-tag-alert{% endif %}">{{ result.advisory.priority }}</span>
+        </header>
+
+        <div class="assessment-strip">
+          <div><span class="assessment-label">PREDICTED CROP</span><strong>{{ result.crop }}</strong><small>Plant class from the image</small></div>
+          <span class="assessment-divider" aria-hidden="true"></span>
+          <div><span class="assessment-label">POSSIBLE CONDITION</span><strong>{{ result.disease }}</strong><small>{{ result.advisory.type }}</small></div>
+        </div>
+
+        <div class="analysis-grid">
+          <article class="analysis-card">
+            <div class="analysis-card-top"><span>01</span><span class="analysis-icon" aria-hidden="true">⌕</span></div>
+            <h3>What the result means</h3>
+            <p class="analysis-lead">{{ result.advisory.crop_note }}</p>
+            <p>{{ result.advisory.what }}</p>
+            <h4>Typical signs to compare</h4>
+            <ul>{% for sign in result.advisory.signs %}<li>{{ sign }}</li>{% endfor %}</ul>
+            <p class="spread-note"><strong>How it may spread:</strong> {{ result.advisory.spread }}</p>
+          </article>
+
+          <article class="analysis-card">
+            <div class="analysis-card-top"><span>02</span><span class="analysis-icon" aria-hidden="true">↗</span></div>
+            <h3>What to do first</h3>
+            <p class="analysis-card-intro">A practical first-pass plan while you verify the result.</p>
+            <ol class="action-list">{% for action in result.advisory.first_steps %}<li><span>{{ loop.index|string }}</span><p>{{ action }}</p></li>{% endfor %}</ol>
+            <div class="watch-note"><strong>When to get help</strong><p>{{ result.advisory.watch }}</p></div>
+          </article>
+
+          <article class="analysis-card treatment-card">
+            <div class="analysis-card-top"><span>03</span><span class="analysis-icon" aria-hidden="true">＋</span></div>
+            <h3>Treatment &amp; medication options</h3>
+            <p class="analysis-card-intro">Start with the non-chemical actions above. Treat only after the cause is confirmed.</p>
+            <ul>{% for option in result.advisory.treatment %}<li>{{ option }}</li>{% endfor %}</ul>
+            {% if not result.advisory.healthy %}<div class="label-note"><strong>If a chemical treatment is advised</strong><p>Use only a product currently registered for this crop and problem in your country. Follow its label for dose, protective equipment, weather, re-entry, pollinators, and harvest interval. Never guess a dose or mix products unless the label allows it.</p></div>{% endif %}
+          </article>
+
+          <article class="analysis-card">
+            <div class="analysis-card-top"><span>04</span><span class="analysis-icon" aria-hidden="true">↻</span></div>
+            <h3>Prevent recurrence</h3>
+            <p class="analysis-card-intro">Small routine changes often reduce disease pressure and make new symptoms easier to catch.</p>
+            <ul>{% for step in result.advisory.prevention %}<li>{{ step }}</li>{% endfor %}</ul>
+            <div class="follow-up-note"><strong>Follow-up</strong>{% if result.advisory.priority.startswith('Urgent') or result.advisory.priority.startswith('Prompt') %}<p>Contact the local specialist now as advised above; do not wait for a follow-up photo before seeking confirmation.</p>{% else %}<p>Take another photo of the same plant in 3–5 days. Compare new growth, not the old damaged spots, and note whether symptoms are spreading.</p>{% endif %}</div>
+          </article>
+        </div>
+
+        <div class="reference-row">
+          <div><span class="assessment-label">TRUSTED READING</span><p>Guidance varies by crop, region, season, and product registration.</p></div>
+          <div class="reference-links">{% for source in result.advisory.sources %}<a href="{{ source.url }}" target="_blank" rel="noopener noreferrer">{{ source.label }} <span aria-hidden="true">↗</span></a>{% endfor %}</div>
+        </div>
+        <p class="report-disclaimer">AI-generated screening support for a student project. A plant pathologist, extension officer, or qualified local agronomist should confirm the cause and any treatment. Model confidence is not the probability that the field diagnosis is correct.</p>
+      </section>
+      {% endif %}
+
+      <section class="how-it-works" id="how-it-works">
+        <div class="section-intro"><p class="eyebrow">SIMPLE BY DESIGN</p><h2>A useful check in three steps.</h2></div>
+        <div class="steps-grid">
+          <article class="step-card"><span class="step-number">01</span><span class="step-card-icon" aria-hidden="true">↥</span><h3>Share a clear photo</h3><p>Choose one leaf with visible symptoms, good light and as little blur as possible.</p></article>
+          <article class="step-card"><span class="step-number">02</span><span class="step-card-icon" aria-hidden="true">⌕</span><h3>Review the estimate</h3><p>The model compares the image with crop and condition patterns it learned.</p></article>
+          <article class="step-card"><span class="step-number">03</span><span class="step-card-icon" aria-hidden="true">↗</span><h3>Choose a next step</h3><p>Review the condition-specific action plan and confirm locally before treatment.</p></article>
+        </div>
+      </section>
+
+      {% if history %}
+      <section class="history">
+        <div class="history-heading"><div><p class="eyebrow">THIS BROWSER SESSION</p><h2>Recent checks</h2></div><span class="history-count">{{ history|length }} CHECK{{ '' if history|length == 1 else 'S' }}</span></div>
+        <div class="history-list">
+          {% for item in history %}
+          <div class="history-row"><span class="history-crop">{{ item.crop }}</span><span class="history-disease">{{ item.disease }}</span><span class="history-confidence">{{ "%.1f"|format(item.confidence * 100) }}%</span><span class="history-chevron" aria-hidden="true">›</span></div>
+          {% endfor %}
+        </div>
+      </section>
+      {% endif %}
+    </main>
+
+    <footer>
+      <a class="footer-brand" href="/">LeafCheck<span class="brand-period">.</span></a>
+      <span>Smart Crop Disease Detection &amp; Advisory System</span>
+      <span class="footer-note">AI-assisted screening for learning and demonstration</span>
+    </footer>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>
